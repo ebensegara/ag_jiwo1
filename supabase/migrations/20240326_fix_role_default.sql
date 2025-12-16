@@ -1,0 +1,3 @@
+ALTER TABLE public.users ALTER COLUMN role DROP DEFAULT;
+
+ALTER TABLE public.users ALTER COLUMN role SET NOT NULL;
