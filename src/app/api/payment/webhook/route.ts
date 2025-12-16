@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
-const midtransServerKey = process.env.MIDTRANS_SERVER_KEY!;
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error('Supabase configuration missing');
+  }
+
+  return createClient(supabaseUrl, supabaseServiceKey);
+}
 
 function verifySignature(orderId: string, statusCode: string, grossAmount: string, signatureKey: string): boolean {
+  const midtransServerKey = process.env.MIDTRANS_SERVER_KEY || '';
   const hash = crypto
     .createHash('sha512')
     .update(`${orderId}${statusCode}${grossAmount}${midtransServerKey}`)
@@ -17,6 +23,7 @@ function verifySignature(orderId: string, statusCode: string, grossAmount: strin
 }
 
 export async function POST(request: NextRequest) {
+  const supabase = getSupabaseClient();
   try {
     const body = await request.json();
     const {
@@ -71,10 +78,10 @@ export async function POST(request: NextRequest) {
     } else if (body.status === 'paid') {
       paymentStatus = 'paid';
     }
-    
+
     const { error: updateError } = await supabase
       .from('payments')
-      .update({ 
+      .update({
         status: paymentStatus,
         midtrans_response: body,
         updated_at: new Date().toISOString()
@@ -159,9 +166,9 @@ async function processSubscriptionPayment(payment: any) {
         chat_limit: 999999,
         updated_at: new Date().toISOString(),
       },
-      { 
+      {
         onConflict: 'user_id',
-        ignoreDuplicates: false 
+        ignoreDuplicates: false
       }
     );
 

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error('Supabase configuration missing');
+  }
+
+  return createClient(supabaseUrl, supabaseServiceKey);
+}
 
 export async function POST(request: NextRequest) {
+  const supabase = getSupabaseClient();
   try {
     const body = await request.json();
     const { user_id, amount, payment_type, metadata } = body;
@@ -20,7 +27,7 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-    
+
     // Validate key format
     if (!midtransServerKey.startsWith('SB-Mid-server-') && !midtransServerKey.startsWith('Mid-server-')) {
       console.error('Invalid MIDTRANS_SERVER_KEY format. Key should start with SB-Mid-server- (sandbox) or Mid-server- (production)');
@@ -76,9 +83,9 @@ export async function POST(request: NextRequest) {
 
     // Call Midtrans Snap API
     const authString = Buffer.from(`${midtransServerKey}:`).toString('base64');
-    
+
     console.log('Calling Midtrans Snap API with order_id:', ref_code);
-    
+
     const midtransResponse = await fetch('https://app.sandbox.midtrans.com/snap/v1/transactions', {
       method: 'POST',
       headers: {
@@ -99,7 +106,7 @@ export async function POST(request: NextRequest) {
     if (!midtransResponse.ok) {
       console.error('Midtrans error:', midtransResult);
       console.warn('Falling back to mock payment mode for testing');
-      
+
       // Generate mock token for testing
       snap_token = `MOCK-${ref_code}`;
       redirect_url = `/api/payment/mock-complete?ref=${ref_code}&user_id=${user_id}&type=${payment_type}`;
