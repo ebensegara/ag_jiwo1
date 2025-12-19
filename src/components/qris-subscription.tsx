@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Sparkles, Crown, CheckCircle2, Loader2 } from "lucide-react";
 import { supabase, getSafeUser } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
-import PayWithSnap from "@/components/payments/PayWithSnap";
+import Ipay88QrisModal from "@/components/ipay88-qris-modal";
 
 interface SubscriptionStatus {
   isActive: boolean;
@@ -38,7 +38,7 @@ export default function QrisSubscription() {
   const [showPayment, setShowPayment] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
-  const [snapToken, setSnapToken] = useState<string | null>(null);
+  const [paymentData, setPaymentData] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -103,7 +103,7 @@ export default function QrisSubscription() {
   const handlePlanSelect = async (plan: Plan) => {
     setSelectedPlan(plan);
     setLoading(true);
-    
+
     try {
       const user = await getSafeUser();
       if (!user) {
@@ -115,8 +115,8 @@ export default function QrisSubscription() {
         return;
       }
 
-      // Create payment with Midtrans Snap
-      const response = await fetch("/api/payment/charge", {
+      // Create payment with iPay88 QRIS
+      const response = await fetch("/api/payment/ipay88", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -133,8 +133,8 @@ export default function QrisSubscription() {
 
       const result = await response.json();
 
-      if (result.success && result.snap_token) {
-        setSnapToken(result.snap_token);
+      if (result.success && result.checkout_id) {
+        setPaymentData(result);
         setShowPlanModal(false);
         setShowPayment(true);
       } else {
@@ -157,33 +157,16 @@ export default function QrisSubscription() {
       description: "Your subscription has been activated",
     });
     setShowPayment(false);
-    setSnapToken(null);
+    setPaymentData(null);
     await fetchSubscriptionStatus();
-  };
-
-  const handlePaymentPending = () => {
-    setShowPayment(false);
-    setSnapToken(null);
-    toast({
-      title: "Payment Pending",
-      description: "Please complete your payment to activate subscription",
-    });
-  };
-
-  const handlePaymentError = () => {
-    setShowPayment(false);
-    setSnapToken(null);
-    toast({
-      title: "Payment Failed",
-      description: "There was an error processing your payment",
-      variant: "destructive",
-    });
   };
 
   const handlePaymentClose = () => {
     setShowPayment(false);
-    setSnapToken(null);
+    setPaymentData(null);
   };
+
+
 
   return (
     <>
@@ -280,11 +263,11 @@ export default function QrisSubscription() {
               Pilih paket yang sesuai dengan kebutuhan Anda
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
             {plans.map((plan) => (
-              <Card 
-                key={plan.id} 
+              <Card
+                key={plan.id}
                 className="border-[#756657]/20 hover:border-[#756657] transition-all cursor-pointer"
                 onClick={() => handlePlanSelect(plan)}
               >
@@ -301,7 +284,7 @@ export default function QrisSubscription() {
                       {plan.duration_days} hari
                     </p>
                   </div>
-                  
+
                   {plan.features && plan.features.length > 0 && (
                     <div className="space-y-2">
                       {plan.features.map((feature, index) => (
@@ -312,8 +295,8 @@ export default function QrisSubscription() {
                       ))}
                     </div>
                   )}
-                  
-                  <Button 
+
+                  <Button
                     className="w-full bg-[#756657] hover:bg-[#756657]/90 text-white"
                     disabled={loading}
                   >
@@ -333,15 +316,22 @@ export default function QrisSubscription() {
         </DialogContent>
       </Dialog>
 
-      {/* Snap Payment - Auto opens when token is ready */}
-      {showPayment && snapToken && (
-        <PayWithSnap
-          snapToken={snapToken}
-          onSuccess={handlePaymentSuccess}
-          onPending={handlePaymentPending}
-          onError={handlePaymentError}
+      {/* iPay88 QRIS Payment Modal */}
+      {showPayment && paymentData && (
+        <Ipay88QrisModal
+          isOpen={showPayment}
           onClose={handlePaymentClose}
-          autoOpen={true}
+          paymentData={{
+            checkout_url: paymentData.checkout_url,
+            checkout_id: paymentData.checkout_id,
+            checkout_signature: paymentData.checkout_signature,
+            ref_code: paymentData.ref_code,
+            payment_id: paymentData.payment_id,
+            amount: paymentData.amount,
+            expiry_time: paymentData.expiry_time,
+          }}
+          onSuccess={handlePaymentSuccess}
+          type="subscription"
         />
       )}
     </>

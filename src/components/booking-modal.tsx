@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase, getSafeUser } from "@/lib/supabase";
 import { Loader2, Calendar as CalendarIcon } from "lucide-react";
-import PayWithSnap from "@/components/payments/PayWithSnap";
+import Ipay88QrisModal from "@/components/ipay88-qris-modal";
 import { format } from "date-fns";
 
 interface BookingModalProps {
@@ -33,7 +33,7 @@ export default function BookingModal({
   const [time, setTime] = useState("10:00");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
-  const [snapToken, setSnapToken] = useState<string | null>(null);
+  const [paymentData, setPaymentData] = useState<any>(null);
   const [showPayment, setShowPayment] = useState(false);
   const { toast } = useToast();
 
@@ -53,7 +53,7 @@ export default function BookingModal({
 
     try {
       setLoading(true);
-      
+
       const user = await getSafeUser();
       if (!user) {
         toast({
@@ -85,8 +85,8 @@ export default function BookingModal({
 
       if (bookingError) throw bookingError;
 
-      // Create payment with Midtrans Snap
-      const response = await fetch("/api/payment/charge", {
+      // Create payment with iPay88 QRIS
+      const response = await fetch("/api/payment/ipay88", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -104,9 +104,9 @@ export default function BookingModal({
       });
 
       const result = await response.json();
-      
-      if (result.success && result.snap_token) {
-        setSnapToken(result.snap_token);
+
+      if (result.success && result.checkout_id) {
+        setPaymentData(result);
         setShowPayment(true);
       } else {
         throw new Error(result.error || "Failed to create payment");
@@ -124,7 +124,7 @@ export default function BookingModal({
 
   const handlePaymentSuccess = () => {
     setShowPayment(false);
-    setSnapToken(null);
+    setPaymentData(null);
     onClose();
     toast({
       title: "Booking Confirmed! 🎉",
@@ -133,28 +133,9 @@ export default function BookingModal({
     onSuccess();
   };
 
-  const handlePaymentPending = () => {
-    setShowPayment(false);
-    setSnapToken(null);
-    toast({
-      title: "Payment Pending",
-      description: "Please complete your payment to confirm booking",
-    });
-  };
-
-  const handlePaymentError = () => {
-    setShowPayment(false);
-    setSnapToken(null);
-    toast({
-      title: "Payment Failed",
-      description: "There was an error processing your payment",
-      variant: "destructive",
-    });
-  };
-
   const handlePaymentClose = () => {
     setShowPayment(false);
-    setSnapToken(null);
+    setPaymentData(null);
   };
 
   // Disable past dates
@@ -243,15 +224,22 @@ export default function BookingModal({
         </DialogContent>
       </Dialog>
 
-      {/* Snap Payment - Auto opens when token is ready */}
-      {showPayment && snapToken && (
-        <PayWithSnap
-          snapToken={snapToken}
-          onSuccess={handlePaymentSuccess}
-          onPending={handlePaymentPending}
-          onError={handlePaymentError}
+      {/* iPay88 QRIS Payment Modal */}
+      {showPayment && paymentData && (
+        <Ipay88QrisModal
+          isOpen={showPayment}
           onClose={handlePaymentClose}
-          autoOpen={true}
+          paymentData={{
+            checkout_url: paymentData.checkout_url,
+            checkout_id: paymentData.checkout_id,
+            checkout_signature: paymentData.checkout_signature,
+            ref_code: paymentData.ref_code,
+            payment_id: paymentData.payment_id,
+            amount: paymentData.amount,
+            expiry_time: paymentData.expiry_time,
+          }}
+          onSuccess={handlePaymentSuccess}
+          type="booking"
         />
       )}
     </>
