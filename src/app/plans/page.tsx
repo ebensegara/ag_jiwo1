@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Check, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/use-toast";
-import PayWithSnap from "@/components/payments/PayWithSnap";
+import Ipay88QrisModal from "@/components/ipay88-qris-modal";
 
 interface Plan {
   id: string;
@@ -23,7 +23,7 @@ export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
-  const [snapToken, setSnapToken] = useState<string | null>(null);
+  const [paymentData, setPaymentData] = useState<any>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [processingPlanId, setProcessingPlanId] = useState<string | null>(null);
   const router = useRouter();
@@ -58,15 +58,15 @@ export default function PlansPage() {
     try {
       setSelectedPlan(plan);
       setProcessingPlanId(plan.id);
-      
+
       const user = await getSafeUser();
       if (!user) {
         router.push("/auth");
         return;
       }
 
-      // Create payment with Midtrans Snap
-      const response = await fetch("/api/payment/charge", {
+      // Create payment with iPay88 QRIS
+      const response = await fetch("/api/payment/ipay88", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -82,9 +82,9 @@ export default function PlansPage() {
       });
 
       const result = await response.json();
-      
-      if (result.success && result.snap_token) {
-        setSnapToken(result.snap_token);
+
+      if (result.success && result.checkout_id) {
+        setPaymentData(result);
         setShowPayment(true);
       } else {
         throw new Error(result.error || "Failed to create payment");
@@ -102,7 +102,7 @@ export default function PlansPage() {
 
   const handlePaymentSuccess = () => {
     setShowPayment(false);
-    setSnapToken(null);
+    setPaymentData(null);
     toast({
       title: "Subscription Active! 🎉",
       description: "Your subscription has been activated successfully",
@@ -110,28 +110,9 @@ export default function PlansPage() {
     router.push("/");
   };
 
-  const handlePaymentPending = () => {
-    setShowPayment(false);
-    setSnapToken(null);
-    toast({
-      title: "Payment Pending",
-      description: "Please complete your payment to activate subscription",
-    });
-  };
-
-  const handlePaymentError = () => {
-    setShowPayment(false);
-    setSnapToken(null);
-    toast({
-      title: "Payment Failed",
-      description: "There was an error processing your payment",
-      variant: "destructive",
-    });
-  };
-
   const handlePaymentClose = () => {
     setShowPayment(false);
-    setSnapToken(null);
+    setPaymentData(null);
   };
 
   if (loading) {
@@ -210,15 +191,22 @@ export default function PlansPage() {
         </div>
       </div>
 
-      {/* Snap Payment - Auto opens when token is ready */}
-      {showPayment && snapToken && (
-        <PayWithSnap
-          snapToken={snapToken}
-          onSuccess={handlePaymentSuccess}
-          onPending={handlePaymentPending}
-          onError={handlePaymentError}
+      {/* iPay88 QRIS Payment Modal */}
+      {showPayment && paymentData && (
+        <Ipay88QrisModal
+          isOpen={showPayment}
           onClose={handlePaymentClose}
-          autoOpen={true}
+          paymentData={{
+            checkout_url: paymentData.checkout_url,
+            checkout_id: paymentData.checkout_id,
+            checkout_signature: paymentData.checkout_signature,
+            ref_code: paymentData.ref_code,
+            payment_id: paymentData.payment_id,
+            amount: paymentData.amount,
+            expiry_time: paymentData.expiry_time,
+          }}
+          onSuccess={handlePaymentSuccess}
+          type="subscription"
         />
       )}
     </div>
