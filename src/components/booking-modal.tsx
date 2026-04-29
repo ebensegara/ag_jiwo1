@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -33,13 +33,94 @@ export default function BookingModal({
   const [time, setTime] = useState("10:00");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [paymentData, setPaymentData] = useState<any>(null);
   const [showPayment, setShowPayment] = useState(false);
   const { toast } = useToast();
 
-  const timeSlots = [
-    "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00"
-  ];
+  useEffect(() => {
+    if (date) {
+      fetchAvailableSlots();
+    }
+  }, [date, professional.id]);
+
+  const fetchAvailableSlots = async () => {
+    if (!date) return;
+
+    try {
+      setSlotsLoading(true);
+      const dayOfWeek = date.getDay();
+      console.log("Fetching slots for:", { professionalId: professional.id, date, dayOfWeek });
+
+      // 1. Fetch professional's availability slots for this day
+      const { data: slots, error: slotsError } = await supabase
+        .from("availability_slots")
+        .select("start_time, end_time")
+        .eq("professional_id", professional.id)
+        .eq("day_of_week", dayOfWeek);
+
+      if (slotsError) {
+        console.error("Slots fetch error:", slotsError);
+        throw slotsError;
+      }
+      console.log("Raw availability slots from DB:", slots);
+
+      // 2. Fetch existing bookings for this professional on this date
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const { data: bookings, error: bookingsError } = await supabase
+        .from("bookings")
+        .select("session_time")
+        .eq("professional_id", professional.id)
+        .gte("session_time", startOfDay.toISOString())
+        .lte("session_time", endOfDay.toISOString())
+        .not("status", "eq", "cancelled");
+
+      if (bookingsError) {
+        console.error("Bookings fetch error:", bookingsError);
+        throw bookingsError;
+      }
+
+      const bookedTimes = bookings?.map(b => format(new Date(b.session_time), "HH:mm")) || [];
+      console.log("Existing booked times:", bookedTimes);
+
+      // 3. Generate hourly slots from availability
+      const generatedSlots: string[] = [];
+      slots?.forEach(slot => {
+        let current = slot.start_time.substring(0, 5);
+        const end = slot.end_time.substring(0, 5);
+
+        while (current < end) {
+          if (!bookedTimes.includes(current)) {
+            generatedSlots.push(current);
+          }
+
+          // Increment by 1 hour
+          const [h, m] = current.split(":").map(Number);
+          const nextH = h + 1;
+          current = `${nextH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        }
+      });
+
+      setAvailableSlots(generatedSlots.sort());
+      if (generatedSlots.length > 0 && !generatedSlots.includes(time)) {
+        setTime(generatedSlots[0]);
+      }
+    } catch (error: any) {
+      console.error("Error fetching slots:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load available time slots",
+        variant: "destructive",
+      });
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
 
   const handleBookSession = async () => {
     if (!date) {
@@ -76,8 +157,11 @@ export default function BookingModal({
           user_id: user.id,
           professional_id: professional.id,
           session_time: sessionDateTime.toISOString(),
+          start_time: sessionDateTime.toISOString(),
+          end_time: new Date(sessionDateTime.getTime() + 60 * 60 * 1000).toISOString(),
           price: professional.price_per_session,
           status: "pending",
+          payment_status: "unpaid",
           notes,
         })
         .select()
@@ -108,6 +192,9 @@ export default function BookingModal({
       if (result.success && result.checkout_id) {
         setPaymentData(result);
         setShowPayment(true);
+
+        // TODO: Trigger n8n webhook for booking creation notification
+        console.log("n8n Webhook: Booking Created", { bookingId: booking.id, userId: user.id });
       } else {
         throw new Error(result.error || "Failed to create payment");
       }
@@ -126,10 +213,16 @@ export default function BookingModal({
     setShowPayment(false);
     setPaymentData(null);
     onClose();
+
+    // Update booking payment status locally (usually handled by webhook)
     toast({
       title: "Booking Confirmed! 🎉",
       description: "Your session has been booked successfully",
     });
+
+    // TODO: Trigger n8n webhook for payment confirmation & session link generation
+    console.log("n8n Webhook: Payment Success & Session Link Generation");
+
     onSuccess();
   };
 
@@ -181,19 +274,32 @@ export default function BookingModal({
 
             <div>
               <Label className="text-base font-semibold mb-3">Select Time</Label>
-              <div className="grid grid-cols-4 gap-2">
-                {timeSlots.map((slot) => (
-                  <Button
-                    key={slot}
-                    variant={time === slot ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setTime(slot)}
-                    className={time === slot ? "bg-[#756657] hover:bg-[#756657]/90" : ""}
-                  >
-                    {slot}
-                  </Button>
-                ))}
-              </div>
+              {slotsLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#8B6CFD]" />
+                </div>
+              ) : !date ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Please select a date first</p>
+              ) : availableSlots.length === 0 ? (
+                <div className="text-center py-4 space-y-2">
+                  <p className="text-sm text-red-500 font-medium">No slots available for this date.</p>
+                  <p className="text-xs text-muted-foreground">The professional may not have configured their schedule for this day.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2">
+                  {availableSlots.map((slot) => (
+                    <Button
+                      key={slot}
+                      variant={time === slot ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setTime(slot)}
+                      className={time === slot ? "bg-[#756657] hover:bg-[#756657]/90" : ""}
+                    >
+                      {slot}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Palette,
   Wind,
+  Sparkles,
 } from "lucide-react";
 import MoodCheckin from "@/components/mood-checkin";
 import Journal from "@/components/journal";
@@ -21,9 +22,20 @@ import WeeklyInsight from "@/components/dashboard-pages/weekly-insight";
 import HolisticCare from "@/components/dashboard-pages/holistic-care";
 import ArtTherapy from "@/components/dashboard-pages/art-therapy";
 import Relaxation from "@/components/dashboard-pages/relaxation";
+import WellnessDashboard from "@/components/dashboard-pages/wellness-dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const pages = [
+  {
+    id: "wellness",
+    title: "Wellness Dashboard",
+    icon: Sparkles,
+    component: WellnessDashboard,
+    bgColor: "bg-gradient-to-br from-[#E2E8F0] to-[#CBD5E1]",
+    activeBg: "bg-gradient-to-br from-[#475569] to-[#1E293B]",
+    textColor: "text-[#1E293B]",
+    activeText: "text-white",
+  },
   {
     id: "mood",
     title: "Mood Check-in",
@@ -165,11 +177,10 @@ export default function DashboardCarousel() {
               <button
                 key={page.id}
                 onClick={() => scrollTo(index)}
-                className={`flex flex-col items-center gap-3 px-8 py-5 rounded-2xl transition-all whitespace-nowrap shadow-lg hover:shadow-xl transform hover:scale-105 min-w-[160px] ${
-                  isActive
-                    ? `${page.activeBg} ${page.activeText} shadow-2xl scale-105 ring-4 ring-white/50`
-                    : `${page.bgColor} ${page.textColor} hover:brightness-95`
-                }`}
+                className={`flex flex-col items-center gap-3 px-8 py-5 rounded-2xl transition-all whitespace-nowrap shadow-lg hover:shadow-xl transform hover:scale-105 min-w-[160px] ${isActive
+                  ? `${page.activeBg} ${page.activeText} shadow-2xl scale-105 ring-4 ring-white/50`
+                  : `${page.bgColor} ${page.textColor} hover:brightness-95`
+                  }`}
               >
                 <Icon className="h-7 w-7 flex-shrink-0" />
                 <span className="text-base font-bold text-center leading-tight">
@@ -205,11 +216,10 @@ export default function DashboardCarousel() {
             <button
               key={page.id}
               onClick={() => scrollTo(index)}
-              className={`h-3 rounded-full transition-all shadow-sm hover:shadow-md ${
-                isActive
-                  ? `w-12 shadow-lg ${page.activeBg}`
-                  : `w-3 hover:brightness-90 ${page.bgColor}`
-              }`}
+              className={`h-3 rounded-full transition-all shadow-sm hover:shadow-md ${isActive
+                ? `w-12 shadow-lg ${page.activeBg}`
+                : `w-3 hover:brightness-90 ${page.bgColor}`
+                }`}
               aria-label={`Go to ${page.title}`}
             />
           );

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+export const dynamic = "force-dynamic";
 
 // Response URL handler - redirects user after payment
 export async function POST(request: NextRequest) {
