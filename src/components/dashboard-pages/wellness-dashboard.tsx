@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     BookOpen,
@@ -10,10 +11,14 @@ import {
     Moon,
     Map,
     BarChart2,
-    AlertTriangle
+    AlertTriangle,
+    Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { supabase, getSafeUser } from "@/lib/supabase";
 
 const TOOLS = [
     {
@@ -56,17 +61,91 @@ const TOOLS = [
 ];
 
 export default function WellnessDashboard() {
+    const [isPanicking, setIsPanicking] = useState(false);
+    const [allowProactive, setAllowProactive] = useState(true);
+    const [userId, setUserId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchUserAndPreferences = async () => {
+            const user = await getSafeUser();
+            if (user) {
+                setUserId(user.id);
+                const { data } = await supabase
+                    .from('user_preferences')
+                    .select('allow_proactive_greeting')
+                    .eq('user_id', user.id)
+                    .single();
+                if (data) {
+                    setAllowProactive(data.allow_proactive_greeting);
+                } else {
+                    // Create preference if not exists
+                    await supabase.from('user_preferences').insert({ user_id: user.id, allow_proactive_greeting: true });
+                }
+            }
+        };
+        fetchUserAndPreferences();
+    }, []);
+
+    const handleProactiveToggle = async (checked: boolean) => {
+        setAllowProactive(checked);
+        if (userId) {
+            await supabase
+                .from('user_preferences')
+                .update({ allow_proactive_greeting: checked })
+                .eq('user_id', userId);
+        }
+    };
+
+    const handlePanic = async () => {
+        if (!userId) return;
+        setIsPanicking(true);
+        try {
+            const response = await fetch('/api/agent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: "Aku panic", userId })
+            });
+            const data = await response.json();
+            if (data.success && data.text) {
+                const utterance = new SpeechSynthesisUtterance(data.text);
+                utterance.lang = "id-ID";
+                window.speechSynthesis.speak(utterance);
+            }
+        } catch (error) {
+            console.error("Agent error:", error);
+        } finally {
+            setIsPanicking(false);
+        }
+    };
+
     return (
-        <div className="space-y-8 animate-in fade-in duration-500">
+        <div className="space-y-8 animate-in fade-in duration-500 relative">
+            {/* Top Right Toggle */}
+            <div className="absolute top-0 right-0 flex items-center space-x-2 bg-white/50 backdrop-blur-sm p-3 rounded-xl shadow-sm z-10">
+                <Label htmlFor="proactive-greeting" className="text-sm font-medium text-gray-700 cursor-pointer">
+                    Izinin Jiwo nyapa duluan
+                </Label>
+                <Switch 
+                    id="proactive-greeting" 
+                    checked={allowProactive}
+                    onCheckedChange={handleProactiveToggle}
+                />
+            </div>
+
             {/* Hero Section */}
-            <div className="text-center space-y-4">
+            <div className="text-center space-y-4 pt-12">
                 <h2 className="text-3xl font-bold text-[#3D3D3D]">How are you feeling today?</h2>
                 <p className="text-gray-600 max-w-2xl mx-auto">
                     Your journey to calmness starts here. Choose a tool below or use the panic relief button for immediate help.
                 </p>
-                <Button variant="destructive" className="rounded-full px-8 py-6 h-auto text-lg font-bold shadow-xl hover:scale-105 transition-transform">
-                    <AlertTriangle className="mr-2 h-6 w-6" />
-                    Panic Relief
+                <Button 
+                    variant="destructive" 
+                    className="rounded-full px-8 py-6 h-auto text-lg font-bold shadow-xl hover:scale-105 transition-transform"
+                    onClick={handlePanic}
+                    disabled={isPanicking}
+                >
+                    {isPanicking ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <AlertTriangle className="mr-2 h-6 w-6" />}
+                    {isPanicking ? "Menenangkan..." : "Panic Relief"}
                 </Button>
             </div>
 
