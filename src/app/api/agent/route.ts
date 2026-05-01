@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const getOpenAIClient = () => new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'dummy_key',
-});
+const getGeminiClient = () => new GoogleGenerativeAI(
+  process.env.GEMINI_API_KEY || 'dummy_key'
+);
 
 
 function getSupabaseClient() {
@@ -61,17 +61,14 @@ export async function POST(request: NextRequest) {
     // Construct the system prompt
     const systemPrompt = `Kamu Jiwo, temen ${userName} yang inget memori ini:\n${memoryContext}\nBerikan balasan yang suportif, ramah, dan menenangkan, apalagi kalau temanmu sedang panik. Berikan jawaban dalam bahasa Indonesia.`;
 
-    const openai = getOpenAIClient();
-    const chatCompletion = await openai.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: text },
-      ],
-      model: 'gpt-3.5-turbo',
-      max_tokens: 150,
+    const genAI = getGeminiClient();
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      systemInstruction: systemPrompt,
     });
 
-    const responseText = chatCompletion.choices[0].message.content || 'Maaf, aku sedang tidak bisa membalas saat ini.';
+    const result = await model.generateContent(text);
+    const responseText = result.response.text() || 'Maaf, aku sedang tidak bisa membalas saat ini.';
 
     // Return the text response
     return NextResponse.json({
