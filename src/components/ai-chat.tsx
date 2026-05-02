@@ -280,23 +280,25 @@ export default function AIChat() {
       setIsTyping(true);
 
       try {
-        const { data, error: functionError } = await supabase.functions.invoke(
-          'supabase-functions-n8n-webhook-proxy',
-          {
-            body: {
-              message: userMessage,
-              user_id: user.id,
-              topic: selectedTopic?.id,
-              timestamp: new Date().toISOString(),
-            },
-          }
-        );
+        const response = await fetch('/api/agent', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+             text: userMessage,
+             userId: user.id,
+             topic: selectedTopic?.id
+          })
+        });
 
-        if (functionError) {
-          throw functionError;
+        const data = await response.json();
+
+        if (!response.ok) {
+           throw new Error(data.error || "Failed to get response");
         }
 
-        let aiResponse = data?.message || data?.output || data?.response || data?.advice;
+        let aiResponse = data.text;
 
         if (!aiResponse) {
           aiResponse = "Makasih udah berbagi. Aku di sini untuk mendukung perjalanan kesehatan mental kamu 💚";
