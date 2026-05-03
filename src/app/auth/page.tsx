@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, Heart, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
+import Image from "next/image";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -89,15 +90,10 @@ export default function LoginPage() {
       <div className="w-full max-w-md mx-auto">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-[#C4AB9C] to-[#e67b5e] rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <Heart className="h-8 w-8 text-white" />
+          <div className="flex justify-center mb-3">
+            <Image src="/images/jiwo-logo.png" alt="Jiwo.AI" width={160} height={100} className="object-contain" priority />
           </div>
-          <h1 className="text-3xl font-bold text-[#3D3D3D]">
-            Jiwo<span className="text-[#e67b5e]">.AI</span>
-          </h1>
-          <p className="text-[#3D3D3D]/60 mt-2">
-            Teman Anda untuk kesehatan mental
-          </p>
+          <p className="text-[#3D3D3D]/60 mt-1">Teman Anda untuk kesehatan mental</p>
         </div>
 
         {/* Login Card */}

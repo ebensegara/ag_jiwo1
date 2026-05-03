@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Heart, MessageCircle, BookOpen, BarChart3, Menu, X, ClipboardList, TrendingUp, Users, LogOut } from 'lucide-react';
+import { MessageCircle, BookOpen, BarChart3, Menu, ClipboardList, TrendingUp, Users, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/use-toast';
+import Image from 'next/image';
 
 interface NavigationProps {
   activeTab: string;
@@ -76,13 +77,8 @@ export function DesktopSidebar({ activeTab, onTabChange }: NavigationProps) {
   return (
     <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-border">
       <div className="flex flex-col flex-1 min-h-0">
-        <div className="flex items-center h-16 px-6 border-b border-border">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <Heart className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-xl font-semibold">Jiwo.AI</span>
-          </div>
+        <div className="flex items-center h-16 px-4 border-b border-border">
+          <Image src="/images/jiwo-logo.png" alt="Jiwo.AI" width={120} height={48} className="object-contain" priority />
         </div>
         <nav className="flex-1 px-4 py-6 space-y-2">
           {navigationItems.map((item) => {
@@ -146,12 +142,7 @@ export function MobileHeader({ activeTab, onTabChange }: NavigationProps) {
   return (
     <div className="md:hidden bg-white border-b border-border px-4 py-3">
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <Heart className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-semibold">Jiwo.AI</span>
-        </div>
+        <Image src="/images/jiwo-logo.png" alt="Jiwo.AI" width={100} height={40} className="object-contain" priority />
         
         <Sheet open={isOpen} onOpenChange={setIsOpen}>
           <SheetTrigger asChild>
@@ -160,11 +151,8 @@ export function MobileHeader({ activeTab, onTabChange }: NavigationProps) {
             </Button>
           </SheetTrigger>
           <SheetContent side="right" className="w-64">
-            <div className="flex items-center space-x-2 mb-6">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <Heart className="h-5 w-5 text-white" />
-              </div>
-              <span className="text-xl font-semibold">Jiwo.AI</span>
+            <div className="flex items-center mb-6">
+              <Image src="/images/jiwo-logo.png" alt="Jiwo.AI" width={120} height={48} className="object-contain" priority />
             </div>
             <nav className="space-y-2">
               {navigationItems.map((item) => {
