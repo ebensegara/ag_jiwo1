@@ -3,10 +3,9 @@ import { createClient } from '@supabase/supabase-js'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
-// BUG FIX #1: Model name harus prefixed dengan "models/"
-// "text-embedding-004" → 404 error
-// "models/text-embedding-004" → correct
-const embeddingModel = genAI.getGenerativeModel({ model: "models/text-embedding-004" })
+// Centralized model configuration
+const EMBEDDING_MODEL_NAME = "models/gemini-embedding-001"
+const OUTPUT_DIMENSION = 768
 
 export type MemoryType = 'trauma_trigger' | 'preference' | 'fact' | 'event' | 'coping_strategy' | 'journal_insight'
 
@@ -27,15 +26,34 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, supabaseServiceKey)
 }
 
+/**
+ * createEmbedding — Menghasilkan vector 768-dimensi menggunakan Gemini.
+ * Kita memaksa outputDimensionality: 768 agar konsisten dengan DB index limits.
+ */
 export async function createEmbedding(text: string): Promise<number[]> {
-  const result = await embeddingModel.embedContent(text)
-  return result.embedding.values
+  try {
+    const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL_NAME });
+    const result = await model.embedContent({
+      content: { parts: [{ text: text }] },
+      outputDimensionality: OUTPUT_DIMENSION,
+    });
+    
+    if (!result.embedding || !result.embedding.values) {
+      throw new Error("Embedding response empty");
+    }
+    
+    console.log(`[memory] Embedding generated: ${result.embedding.values.length} dimensions using ${EMBEDDING_MODEL_NAME}`);
+    
+    // Matryoshka Truncation: Take first 768 dims for DB compatibility
+    return result.embedding.values.slice(0, OUTPUT_DIMENSION);
+  } catch (error: any) {
+    console.error(`[memory] Embedding generation failed: ${error.message}`);
+    throw error;
+  }
 }
 
 /**
  * saveMemory — Simpan memori ke agent_memory dengan vector embedding.
- * BUG FIX #2: Jika embedding gagal, fallback ke insert tanpa vector
- * agar memori tetap tersimpan (muncul di /memories tapi tidak bisa di-recall via semantic search).
  */
 export async function saveMemory(
   userId: string,
@@ -47,7 +65,6 @@ export async function saveMemory(
   const supabase = getSupabaseAdmin()
 
   try {
-    // Attempt: save WITH vector embedding
     const embedding = await createEmbedding(content)
     const { error } = await supabase.rpc('remember_with_embedding', {
       p_user_id: userId,
@@ -60,7 +77,6 @@ export async function saveMemory(
     console.log(`[memory] ✅ Saved with embedding: [${type}] importance=${importance}`)
 
   } catch (embeddingErr: any) {
-    // Fallback: save WITHOUT embedding (text only)
     console.warn(`[memory] ⚠️ Embedding failed (${embeddingErr.message}), saving without vector...`)
 
     const { error: fallbackError } = await supabase
@@ -71,7 +87,6 @@ export async function saveMemory(
         type,
         importance,
         source,
-        // embedding = NULL → entry muncul di getAllMemories tapi skip di match_memories
       })
 
     if (fallbackError) {
@@ -89,7 +104,7 @@ export async function recallMemories(userId: string, query: string, count = 5) {
     const queryEmbedding = await createEmbedding(query)
     const { data, error } = await supabase.rpc('match_memories', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.65, // Turunkan dari 0.7 → 0.65 agar lebih banyak memori direcall
+      match_threshold: 0.65,
       match_count: count,
       p_user_id: userId
     })
@@ -109,7 +124,7 @@ export async function getAllMemories(userId: string) {
     .eq('user_id', userId)
     .order('importance', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(100) // Naikkan dari 50 → 100
+    .limit(100)
   if (error) throw error
   return data || []
 }
@@ -120,26 +135,16 @@ export async function deleteMemory(memoryId: string, userId: string) {
     .from('agent_memory')
     .delete()
     .eq('id', memoryId)
-    .eq('user_id', userId) // extra safety
+    .eq('user_id', userId)
   if (error) throw error
 }
 
-/**
- * extractAndSaveMemory — Gunakan Gemini untuk ekstrak fakta/preferensi baru
- * dari percakapan user, lalu simpan ke vector store.
- * Dipanggil async (non-blocking) setelah setiap agent response.
- *
- * BUG FIX #3: Prompt diperbarui untuk:
- * - Mendeteksi trauma dengan lebih sensitif (include kata "trauma", "takut", "ngeri", dsb.)
- * - Ekstrak hingga 3 fakta sekaligus (bukan hanya 1)
- * - Threshold importance diturunkan ke ≥ 4 untuk trauma_trigger (safety-critical)
- */
 export async function extractAndSaveMemory(
   userId: string,
   userMessage: string,
   jiwoResponse: string
 ): Promise<void> {
-  const extractModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
+  const extractModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
 
   const extractPrompt = `Kamu adalah sistem ekstraksi memori untuk AI companion mental health bernama Jiwo.
 Analisis percakapan berikut dan ekstrak fakta-fakta PENTING tentang user.
@@ -155,9 +160,6 @@ Ekstrak SEMUA fakta penting yang ditemukan (maksimal 3). Fokus pada:
 Kata kunci: "trauma", "takut", "phobia", "pernah mengalami", "kejadian buruk", "ditinggal", "kehilangan", "kekerasan", "abused", "luka batin", "insecure", "pelecehan", "kecelakaan", "kematian orang terdekat"
 → Ini PALING PENTING. Selalu catat jika ada.
 
-**PREFERENSI** (type: "preference", importance: 5-8)
-Kata kunci: "suka", "benci", "ga mau", "prefer", "lebih senang", "tidak nyaman dengan", "ingin"
-
 **FAKTA DIRI** (type: "fact", importance: 4-7)
 Kata kunci: pekerjaan, kota, keluarga, status, kondisi kesehatan, usia, pendidikan
 
@@ -172,57 +174,34 @@ Jika ada fakta, balas HANYA dengan JSON array:
   {"content": "...", "type": "preference", "importance": 6}
 ]
 
-Jika TIDAK ADA fakta baru yang penting, balas: null
-
-## CONTOH
-
-User: "saya punya trauma waktu kecil ditinggal sendirian di rumah"
-→ [{"content": "User memiliki trauma masa kecil: pernah ditinggal sendirian di rumah, kemungkinan menyebabkan rasa takut ditinggalkan (abandonment issues)", "type": "trauma_trigger", "importance": 9}]
-
-User: "aku kerja di startup, biasanya kalau stres aku jalan-jalan dulu"
-→ [{"content": "User bekerja di startup", "type": "fact", "importance": 5}, {"content": "Jalan-jalan efektif sebagai teknik coping saat user stres", "type": "coping_strategy", "importance": 7}]
-
-User: "halo gimana kabar?"
-→ null`
+Jika TIDAK ADA fakta baru yang penting, balas: null`
 
   const result = await extractModel.generateContent(extractPrompt)
   const rawText = result.response.text().trim()
 
   if (!rawText || rawText === 'null' || rawText === 'NULL') {
-    console.log('[memory] No extractable facts from this message.')
     return
   }
 
-  // Parse JSON — clean up markdown code blocks if present
   const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
   let extracted: ExtractedMemory[]
   try {
     const parsed = JSON.parse(cleaned)
-    // Handle both single object and array
     extracted = Array.isArray(parsed) ? parsed : [parsed]
   } catch (parseErr) {
-    console.warn('[memory] Failed to parse extraction JSON:', rawText)
     return
   }
 
   const validTypes: MemoryType[] = ['trauma_trigger', 'preference', 'fact', 'event', 'coping_strategy', 'journal_insight']
 
-  // Save each extracted memory
   for (const item of extracted) {
     if (!item?.content || !item?.type || item?.importance == null) continue
     if (!validTypes.includes(item.type)) continue
 
-    // BUG FIX #3: Threshold berbeda per type
-    // trauma_trigger → simpan jika importance ≥ 4 (safety-critical, jangan sampai terlewat)
-    // type lain → importance ≥ 5
     const minImportance = item.type === 'trauma_trigger' ? 4 : 5
-    if (item.importance < minImportance) {
-      console.log(`[memory] Skipped (importance ${item.importance} < ${minImportance}): ${item.content.substring(0, 50)}`)
-      continue
-    }
+    if (item.importance < minImportance) continue
 
-    console.log(`[memory] Extracting: [${item.type}] importance=${item.importance}: ${item.content.substring(0, 60)}...`)
     await saveMemory(userId, item.content, item.type, item.importance, 'auto_extract')
   }
 }

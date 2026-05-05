@@ -52,6 +52,8 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        "ici-blue": "#8B6CFD",
+        "ici-yellow": "#FFD217",
       },
       borderRadius: {
         lg: "var(--radius)",

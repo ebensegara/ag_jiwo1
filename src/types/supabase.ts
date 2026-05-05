@@ -967,12 +967,173 @@ export type Database = {
           },
         ]
       }
+      art_workshops: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          host_type: string | null
+          type: string
+          level: string | null
+          duration_min: number | null
+          max_participant: number | null
+          scheduled_at: string
+          zoom_link: string | null
+          recording_url: string | null
+          materials_needed: string[] | null
+          embedding: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          title: string
+          description?: string | null
+          host_type?: string | null
+          type: string
+          level?: string | null
+          duration_min?: number | null
+          max_participant?: number | null
+          scheduled_at: string
+          zoom_link?: string | null
+          recording_url?: string | null
+          materials_needed?: string[] | null
+          embedding?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string | null
+          host_type?: string | null
+          type?: string
+          level?: string | null
+          duration_min?: number | null
+          max_participant?: number | null
+          scheduled_at?: string
+          zoom_link?: string | null
+          recording_url?: string | null
+          materials_needed?: string[] | null
+          embedding?: string | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
+      workshop_registrations: {
+        Row: {
+          id: string
+          workshop_id: string
+          user_id: string
+          status: string | null
+          checkin_at: string | null
+          reflection_note: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          workshop_id: string
+          user_id: string
+          status?: string | null
+          checkin_at?: string | null
+          reflection_note?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          workshop_id?: string
+          user_id?: string
+          status?: string | null
+          checkin_at?: string | null
+          reflection_note?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workshop_registrations_workshop_id_fkey"
+            columns: ["workshop_id"]
+            isOneToOne: false
+            referencedRelation: "art_workshops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workshop_registrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      workshop_memories: {
+        Row: {
+          id: string
+          user_id: string
+          workshop_id: string | null
+          content: string
+          type: string | null
+          importance: number | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          workshop_id?: string | null
+          content: string
+          type?: string | null
+          importance?: number | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          workshop_id?: string | null
+          content?: string
+          type?: string | null
+          importance?: number | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workshop_memories_workshop_id_fkey"
+            columns: ["workshop_id"]
+            isOneToOne: false
+            referencedRelation: "art_workshops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workshop_memories_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
       increment_chat_count: { Args: { p_user_id: string }; Returns: undefined }
+      match_workshops: {
+        Args: {
+          query_embedding: string
+          match_threshold: number
+          match_count: number
+        }
+        Returns: {
+          id: string
+          title: string
+          description: string
+          host_type: string
+          type: string
+          level: string
+          duration_min: number
+          max_participant: number
+          scheduled_at: string
+          materials_needed: string[]
+          similarity: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

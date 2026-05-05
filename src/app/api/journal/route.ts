@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
-import { saveMemory, createEmbedding } from '@/lib/memory';
+import { saveMemory, createEmbedding, recallMemories } from '@/lib/memory';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -39,28 +39,28 @@ async function analyzeJournal(
   moodScore: number,
   preferredName: string
 ): Promise<SemanticAnalysis> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  // Use Gemini 1.5 Pro as requested
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
-  const prompt = `Kamu adalah sistem analisis untuk app mental health Jiwo. User: ${preferredName}. Jurnal: "${rawText}". Mood: ${moodScore}/5.
+  const prompt = `Kamu adalah analyzer sistem mental health Jiwo. User: ${preferredName}. Jurnal: "${rawText}". Mood: ${moodScore}/5.
 
 Tugas: Extract JSON SAJA, tanpa teks lain, tanpa markdown:
 {
-  "emotion_tags": ["cemas", "lelah", "bersyukur"],
-  "core_theme": "tema utama dalam 2-5 kata",
-  "key_facts": ["fakta spesifik untuk memori"],
-  "cognitive_distortions": ["catastrophizing", "mind_reading"],
-  "intent": "venting | problem_solving | gratitude | crisis",
-  "risk_level": 0,
-  "summary_1_sentence": "Ringkasan 1 kalimat"
+  "emotion_tags": ["tag1", "tag2"], 
+  "core_theme": "tema utama",
+  "key_facts": ["fakta konkret 1", "fakta konkret 2"],
+  "cognitive_distortions": [" distortion1"],
+  "intent": "venting" | "problem_solving" | "gratitude" | "crisis",
+  "risk_level": 0-10,
+  "summary_1_sentence": "..."
 }
 
 ATURAN:
 - emotion_tags: max 4 tag, bahasa Indonesia, spesifik
-- key_facts: max 3 fakta konkret untuk disimpan sebagai memori ("Takut presentasi di depan bos Budi", bukan "user stres")
+- key_facts: max 3 fakta konkret untuk memori ("Takut presentasi di depan bos Budi", bukan "stres kerja")
 - cognitive_distortions: kosong [] jika tidak ada
-- risk_level 0-10: 0=aman, 7-9=ideasi pasif, 10=niat eksplisit menyakiti diri
-- Jika risk_level >= 7, intent WAJIB "crisis"
-- Jangan diagnosis. Gunakan bahasa awam.
+- risk_level 0-10: 0=aman, 10=bahaya besar/crisis.
+- intent: sesuaikan dengan isi.
 - Balas HANYA JSON valid.`;
 
   const result = await model.generateContent(prompt);
@@ -71,8 +71,6 @@ ATURAN:
 
   // Enforce: if risk_level >= 7 → intent = crisis
   if (parsed.risk_level >= 7) parsed.intent = 'crisis';
-
-  // Clamp emotion_tags to max 4
   parsed.emotion_tags = (parsed.emotion_tags || []).slice(0, 4);
 
   return parsed;
@@ -89,8 +87,8 @@ async function recallRelatedJournals(
   const { data, error } = await supabase.rpc('match_journal_entries', {
     query_embedding: embedding,
     p_user_id: userId,
-    match_threshold: 0.6,
-    match_count: 3,
+    match_threshold: 0.5, // Lower threshold for journals
+    match_count: 2,
   });
 
   if (error) {
@@ -107,39 +105,42 @@ async function generateIciResponse(
   rawText: string,
   moodScore: number,
   analysis: SemanticAnalysis,
-  relatedEntries: RelatedEntry[],
+  relatedJournals: RelatedEntry[],
+  recalledFacts: any[],
   preferredName: string
 ): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
-  const relatedContext = relatedEntries.length > 0
-    ? relatedEntries
-        .map(e => `- "${e.summary_1_sentence || e.core_theme}" (${new Date(e.created_at).toLocaleDateString('id-ID')})`)
-        .join('\n')
-    : 'Belum ada jurnal sebelumnya.';
+  const factContext = recalledFacts.length > 0
+    ? recalledFacts.map(f => `- ${f.content}`).join('\n')
+    : 'Belum ada memori spesifik.';
 
-  const prompt = `Kamu adalah Ici, teman setia ${preferredName} sejak 2 tahun lalu. Bukan AI, bukan terapis. Teman yang beneran peduli.
+  const journalContext = relatedJournals.length > 0
+    ? relatedJournals.map(j => `- "${j.summary_1_sentence || j.core_theme}" (${new Date(j.created_at).toLocaleDateString('id-ID')})`).join('\n')
+    : 'Belum ada jurnal lama yang relevan.';
 
-KONTEKS JURNAL BARU:
-- Isi: "${rawText}"
-- Mood: ${moodScore}/5
-- Emosi yang dirasakan: ${analysis.emotion_tags.join(', ')}
-- Tema utama: ${analysis.core_theme}
-- Intent: ${analysis.intent}
-${analysis.cognitive_distortions.length > 0 ? `- Pola pikir: ${analysis.cognitive_distortions.join(', ')}` : ''}
+  const prompt = `Kamu adalah Ici, sahabat setia ${preferredName}. Ici itu hangat, empatik, dan beneran peduli. Bukan robot, bukan terapis.
 
-JURNAL/MEMORI LAMA YANG NYAMBUNG:
-${relatedContext}
+JURNAL BARU:
+"${rawText}"
+Mood: ${moodScore}/5
+Emosi: ${analysis.emotion_tags.join(', ')}
+Tema: ${analysis.core_theme}
 
-CARA BALAS (2-4 kalimat, jangan lebih):
-1. VALIDASI dulu — 1 kalimat, pakai kata yang dia pakai. Contoh: "Berat ya ngebayangin dimarahin bos"
-2. Kalau ada jurnal/memori lama yang relevan → kasih 1 insight lembut berbasis itu. Contoh: "Minggu lalu kamu juga takut, tapi ternyata bosnya biasa aja kan?"
-3. Intent VENTING + emosi negatif → tutup dengan: "Mau napin 1 menit bareng aku?"
-4. Intent GRATITUDE → ikut senang: "Ici ikut seneng dengernya!"
-5. Mood 1-2 → boleh pakai "anjir" atau "gila ya"
+FAKTA/MEMORI MASA LALU YANG RELEVAN:
+${factContext}
 
-JANGAN: nanya balik, kasih list tips, ceramah, sebut "sebagai AI", formal.
-GAYA: teman nongkrong, "aku-kamu", hangat, singkat.`;
+JURNAL LAMA YANG RELEVAN:
+${journalContext}
+
+TUGAS:
+Kasih respon 2-3 kalimat yang bikin user ngerasa didenger.
+1. Validasi perasaan mereka dulu (pake kata-kata mereka).
+2. Kalau ada memori/jurnal lama yang nyambung, sebut dikit (misal: "Eh, minggu lalu kamu juga cerita soal...")
+3. Jangan kasih nasihat kecuali mereka minta tolong atau intentnya "problem_solving".
+4. Gaya bahasa: "aku-kamu", santai, hangat, kayak chat WhatsApp sahabat.
+
+JANGAN: list tips, formal, nanya balik yang ribet, sebut "AI".`;
 
   const result = await model.generateContent(prompt);
   return result.response.text().trim();
@@ -218,16 +219,26 @@ export async function POST(request: NextRequest) {
       console.warn('[journal] Embedding failed, saving without vector:', embErr.message);
     }
 
-    // ── Step 4: Semantic Recall (related past journals) ──
+    // ── Step 4: Semantic Recall (facts + related journals) ──
     let relatedEntries: RelatedEntry[] = [];
+    let recalledFacts: any[] = [];
+    
     if (embedding) {
+      // 4a. Recall facts from agent_memory (using raw_text for embedding inside recallMemories)
+      try {
+        recalledFacts = await recallMemories(user_id, raw_text, 2);
+      } catch (recErr) {
+        console.warn('[journal] Fact recall failed:', recErr);
+      }
+
+      // 4b. Recall related journal entries
       relatedEntries = await recallRelatedJournals(user_id, embedding);
     }
 
     // ── Step 5: Generate Ici Response ──
     let iciResponse = '';
     try {
-      iciResponse = await generateIciResponse(raw_text, mood_score, analysis, relatedEntries, preferredName);
+      iciResponse = await generateIciResponse(raw_text, mood_score, analysis, relatedEntries, recalledFacts, preferredName);
     } catch (iciErr: any) {
       console.error('[journal] Ici response generation failed:', iciErr.message);
       iciResponse = `${preferredName}, makasih udah cerita ke Ici. Ici selalu di sini buat dengerin kamu. 🤍`;
